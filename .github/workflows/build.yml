@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # perlu untuk membuat GitHub Release saat push tag
 
 jobs:
   build:
@@ -21,17 +21,29 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Android SDK sudah terpasang di runner ubuntu-latest.
+      # Gradle dipasang langsung, jadi tidak perlu file gradle wrapper di repo.
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
 
+      - name: Cari folder proyek
+        run: |
+          echo "Isi repo:"; find . -maxdepth 3 -not -path './.git*' | head -50
+          SETTINGS=$(find . -name 'settings.gradle*' -not -path './.git/*' | head -1)
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::settings.gradle.kts tidak ditemukan. Upload seluruh isi proyek (app/, build.gradle.kts, settings.gradle.kts, gradle.properties) ke repo."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
 
       - name: Ganti nama APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Cassette-debug.apk
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" dist/Cassette-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
