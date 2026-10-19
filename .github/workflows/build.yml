@@ -55,7 +55,21 @@ jobs:
           echo "Proyek ada di: $(dirname "$SETTINGS")"
 
       - name: Build debug APK
-        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle -p "$PROJECT_DIR" assembleDebug --console=plain 2>&1 | tee build.log
+
+      # Kalau gagal: ringkasan error muncul di halaman Summary (bagian paling atas run).
+      - name: Ringkasan error
+        if: failure()
+        run: |
+          {
+            echo "## Error build"
+            echo '```'
+            grep -E "^e: |error:|AAPT" build.log | head -30 || true
+            grep -E -A6 "What went wrong" build.log | head -24 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ganti nama APK
         run: |
