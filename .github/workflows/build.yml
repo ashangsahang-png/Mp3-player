@@ -2,19 +2,19 @@ name: Build APK
 
 on:
   push:
-    branches: [main, master]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write   # perlu untuk membuat GitHub Release saat push tag
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -27,15 +27,32 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Cari folder proyek
+      # Bisa upload file proyek biasa, ATAU cukup satu file .zip di root repo (otomatis diekstrak).
+      - name: Siapkan proyek
         run: |
-          echo "Isi repo:"; find . -maxdepth 3 -not -path './.git*' | head -50
-          SETTINGS=$(find . -name 'settings.gradle*' -not -path './.git/*' | head -1)
+          echo "Isi repo:"; find . -maxdepth 2 -not -path './.git*' | head -60
+          SETTINGS=$(find . -name 'settings.gradle*' -not -path './.git/*' -not -path './_src/*' | head -1)
           if [ -z "$SETTINGS" ]; then
-            echo "::error::settings.gradle.kts tidak ditemukan. Upload seluruh isi proyek (app/, build.gradle.kts, settings.gradle.kts, gradle.properties) ke repo."
-            exit 1
+            BEST=""; BEST_T=0
+            for z in *.zip; do
+              [ -e "$z" ] || continue
+              t=$(git log -1 --format=%ct -- "$z" || echo 0)
+              if [ "${t:-0}" -ge "$BEST_T" ]; then BEST_T=${t:-0}; BEST="$z"; fi
+            done
+            if [ -z "$BEST" ]; then
+              echo "::error::Tidak ada proyek. Upload file .zip proyek (atau seluruh isinya) ke root repo."
+              exit 1
+            fi
+            echo "Mengekstrak $BEST"
+            mkdir -p _src && unzip -q "$BEST" -d _src
+            SETTINGS=$(find _src -name 'settings.gradle*' | head -1)
+            if [ -z "$SETTINGS" ]; then
+              echo "::error::settings.gradle.kts tidak ada di dalam $BEST"
+              exit 1
+            fi
           fi
           echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+          echo "Proyek ada di: $(dirname "$SETTINGS")"
 
       - name: Build debug APK
         run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
@@ -43,16 +60,16 @@ jobs:
       - name: Ganti nama APK
         run: |
           mkdir -p dist
-          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" dist/Cassette-debug.apk
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" dist/NadaPlayer-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Cassette-debug-apk
-          path: dist/Cassette-debug.apk
+          name: NadaPlayer-debug-apk
+          path: dist/NadaPlayer-debug.apk
 
       - name: Buat GitHub Release (hanya untuk tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Cassette-debug.apk
+          files: dist/NadaPlayer-debug.apk
           generate_release_notes: true
